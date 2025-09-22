@@ -1,9 +1,10 @@
 
 import './App.css'
-
+const language = 'react';
+const framework = 'Vite';
 function App() {
   return (
-    <h1>Hello World</h1>
+    <h1>Hello {language} and {framework}</h1>
   )
 }
 
