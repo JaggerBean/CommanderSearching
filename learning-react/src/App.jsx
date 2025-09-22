@@ -1,10 +1,20 @@
 
 import './App.css'
-const language = 'react';
-const framework = 'Vite';
+function Header() {
+  return (
+    <header>
+      <h1>Welcome to React</h1>
+    </header>
+  )
+}
 function App() {
   return (
-    <h1>Hello {language} and {framework}</h1>
+    <div>
+   <Header />
+   <main>
+    <p>This is my first React app!</p>
+   </main>
+   </div>
   )
 }
 
