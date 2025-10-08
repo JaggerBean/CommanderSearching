@@ -38,12 +38,20 @@ async function fetchCommandersByColorIdentity(colorIdentity) {
   if (!response.ok) throw new Error('Failed to fetch from Scryfall');
   const data = await response.json();
   
-  // Return array of card objects (name, image, etc.)
-  return data.data.map(card => ({
-    name: card.name,
-    image: card.image_uris?.normal || card.card_faces?.[0]?.image_uris?.normal,
-    edhrec_uri: card.related_uris?.edhrec ,
-  }));
+  // Return array of card objects (name, image, price, etc.)
+    return data.data.map(card => {
+      const price = card.prices?.usd ? parseFloat(card.prices.usd) : null;
+      if (price === null) {
+        // Log missing price for user investigation
+        console.warn(`No price found for commander: ${card.name}`);
+      }
+      return {
+        name: card.name,
+        image: card.image_uris?.normal || card.card_faces?.[0]?.image_uris?.normal,
+        edhrec_uri: card.related_uris?.edhrec,
+        price,
+      };
+    });
 }
 
 function pickRandomCommander(commanders) {
@@ -83,6 +91,7 @@ function App() {
   }, [theme]);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [colorInput, setColorInput] = useState("");
+    const [maxPrice, setMaxPrice] = useState(0);
   const [commanders, setCommanders] = useState([]);
   const [randomCommander, setRandomCommander] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -107,14 +116,13 @@ function App() {
     }
   }, []);
 
-  useEffect(() => {
-    if (didMount.current) {
-      localStorage.setItem("favorites", JSON.stringify(favorites));
-      console.log("Saved favorites to localStorage:", favorites);
-    } else {
-      didMount.current = true;
-    }
-  }, [favorites]);
+    useEffect(() => {
+      if (didMount.current) {
+        localStorage.setItem("favorites", JSON.stringify(favorites));
+      } else {
+        didMount.current = true;
+      }
+    }, [favorites]);
 
   const handleInputChange = (e) => setColorInput(e.target.value);
 
@@ -153,7 +161,14 @@ function App() {
     setRandomCommander(null);
     try {
       const results = await fetchCommandersByColorIdentity(colorInput);
-      setRandomCommander(pickRandomCommander(results));
+      let filtered = results;
+      if (parseFloat(maxPrice) > 0) {
+        filtered = results.filter(card => {
+          if (card.price == null) return false;
+          return card.price <= parseFloat(maxPrice);
+        });
+      }
+      setRandomCommander(pickRandomCommander(filtered));
     } catch (err) {
       setError("Failed to fetch commanders. Try a different color identity. Error: " + err.message);
     }
@@ -168,6 +183,7 @@ function App() {
 
   return (
     <>
+
       {/* Header */}
       <header style={{ width: '100%', background: 'rgba(33,150,243,0.95)', color: '#fff', padding: '1.2em 0', marginBottom: '2em', boxShadow: '0 2px 8px rgba(33,150,243,0.12)' }}>
         <div style={{ maxWidth: 900, margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 2em' }}>
@@ -176,7 +192,7 @@ function App() {
         </div>
       </header>
 
-      {/* Desktop Theme Slider */}
+
       <div className="header-actions-desktop">
         <div style={{ position: 'fixed', top: '1em', right: '1em', zIndex: 1200, display: 'flex', alignItems: 'center' }}>
           <label style={{ marginRight: '0.5em' }}>Theme:</label>
@@ -225,7 +241,20 @@ function App() {
 
       {/* Main Content */}
       <div className={theme === "dark" ? "theme-dark main-content-box" : "theme-light main-content-box"} style={{ maxWidth: 900, margin: '1em auto', padding: '1em', borderRadius: 12, boxShadow: '0 2px 16px rgba(0,0,0,0.08)' }}>
-        <form style={{ margin: "0em 0", display: 'flex', flexDirection: 'column', gap: '1em' }}>
+        <form style={{ margin: "0em 0", display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1em' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5em' }}>
+            <label htmlFor="max-price">Max Commander Price $ (0 For No Limit): </label>
+            <input
+              id="max-price"
+              type="number"
+              min="0"
+              step="0.01"
+              value={maxPrice}
+              onChange={e => setMaxPrice(e.target.value)}
+              placeholder="e.g. 10.00"
+              style={{ width: 120, textAlign: 'center' }}
+            />
+          </div>
           <label htmlFor="color-input">Enter color identity (e.g., blue-black, UB): </label>
           <input
             id="color-input"
@@ -233,7 +262,7 @@ function App() {
             value={colorInput}
             onChange={handleInputChange}
             placeholder="e.g., blue-black or UB"
-            style={{ marginRight: "1em" }}
+            style={{ marginRight: "1em", width: 180, textAlign: 'center' }}
           />
           <button type="button" onClick={handleRandomColorIdentity}>
             Random Color Identity
@@ -274,6 +303,9 @@ function App() {
                 />
               )}
               <div style={{ marginTop: '0.5em', fontWeight: 'bold' }}>{randomCommander.name}</div>
+              <div style={{ fontSize: '0.95em', color: '#1976d2', marginTop: 4 }}>
+                {randomCommander.price !== null ? `$${randomCommander.price.toFixed(2)}` : 'N/A'}
+              </div>
             </a>
             <div style={{ marginTop: '1em' }}>
               {favorites.some(fav => fav.name === randomCommander.name) ? (
@@ -288,32 +320,41 @@ function App() {
           <div style={{ margin: '2em 0' }}>
             <h2>Possible Commanders</h2>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '1em' }}>
-              {commanders.map((card) => (
-                <div key={card.name} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '200px' }}>
-                  <a
-                    href={card.edhrec_uri}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    style={{ textAlign: 'center', width: '100%', textDecoration: 'none', color: 'inherit' }}
-                  >
-                    {card.image && (
-                      <img
-                        src={card.image}
-                        alt={card.name}
-                        style={{ width: '100%', borderRadius: '8px', boxShadow: '0 2px 8px rgba(0,0,0,0.15)' }}
-                      />
-                    )}
-                    <div style={{ marginTop: '0.5em', fontWeight: 'bold' }}>{card.name}</div>
-                  </a>
-                  <div style={{ marginTop: '0.5em' }}>
-                    {favorites.some(fav => fav.name === card.name) ? (
-                      <button onClick={() => removeFavorite(card)}>Remove from Favorites</button>
-                    ) : (
-                      <button onClick={() => addFavorite(card)}>Add to Favorites</button>
-                    )}
+              {commanders
+                .filter(card => {
+                  if (parseFloat(maxPrice) === 0) return true;
+                  if (card.price == null) return false;
+                  return card.price <= parseFloat(maxPrice);
+                })
+                .map((card) => (
+                  <div key={card.name} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '200px' }}>
+                    <a
+                      href={card.edhrec_uri}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{ textAlign: 'center', width: '100%', textDecoration: 'none', color: 'inherit' }}
+                    >
+                      {card.image && (
+                        <img
+                          src={card.image}
+                          alt={card.name}
+                          style={{ width: '100%', borderRadius: '8px', boxShadow: '0 2px 8px rgba(0,0,0,0.15)' }}
+                        />
+                      )}
+                      <div style={{ marginTop: '0.5em', fontWeight: 'bold' }}>{card.name}</div>
+                      <div style={{ fontSize: '0.95em', color: '#1976d2', marginTop: 4 }}>
+                        {card.price !== null ? `$${card.price.toFixed(2)}` : 'N/A'}
+                      </div>
+                    </a>
+                    <div style={{ marginTop: '0.5em' }}>
+                      {favorites.some(fav => fav.name === card.name) ? (
+                        <button onClick={() => removeFavorite(card)}>Remove from Favorites</button>
+                      ) : (
+                        <button onClick={() => addFavorite(card)}>Add to Favorites</button>
+                      )}
+                    </div>
                   </div>
-                </div>
-              ))}
+                ))}
             </div>
           </div>
         )}
